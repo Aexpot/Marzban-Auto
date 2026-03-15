@@ -139,7 +139,7 @@ install_node(){
 echo "=== Установка ноды ==="
 
 apt update -y
-apt install -y curl jq socat git
+apt install -y curl jq git socat
 
 read -p "URL панели: " PANEL
 PANEL=${PANEL%/}
@@ -165,9 +165,9 @@ read -p "Имя ноды: " NODE_NAME
 read -p "IP ноды: " NODE_IP
 read -p "Добавить всем пользователям? (yes/no): " ADD_ALL
 
-echo "Создание ноды в панели..."
+echo "Создание ноды..."
 
-NODE_RESPONSE=$(curl -s -X POST "$PANEL/api/node" \
+NODE=$(curl -s -X POST "$PANEL/api/node" \
 -H "Authorization: Bearer $TOKEN" \
 -H "Content-Type: application/json" \
 -d "{
@@ -178,7 +178,21 @@ NODE_RESPONSE=$(curl -s -X POST "$PANEL/api/node" \
 \"usage_coefficient\":1
 }")
 
-CERT=$(echo "$NODE_RESPONSE" | jq -r '.certificate')
+NODE_ID=$(echo "$NODE" | jq -r '.id')
+
+if [ -z "$NODE_ID" ] || [ "$NODE_ID" = "null" ]; then
+echo "Ошибка создания ноды"
+echo "$NODE"
+exit 1
+fi
+
+echo "ID ноды: $NODE_ID"
+
+echo "Получение сертификата..."
+
+CERT=$(curl -s \
+-H "Authorization: Bearer $TOKEN" \
+"$PANEL/api/node/$NODE_ID/certificate" | jq -r '.certificate')
 
 if [ -z "$CERT" ] || [ "$CERT" = "null" ]; then
 echo "Ошибка получения сертификата"
@@ -204,7 +218,6 @@ services:
     environment:
       SSL_CLIENT_CERT_FILE: "/var/lib/marzban-node/client.pem"
       SERVICE_PROTOCOL: rest
-      XRAY_JSON: "/var/lib/marzban-node/xray.json"
 EOF
 
 docker compose up -d
@@ -218,7 +231,8 @@ if [ "$ADD_ALL" = "yes" ]; then
 
 echo "Добавление ноды всем пользователям..."
 
-USERS=$(curl -s -H "Authorization: Bearer $TOKEN" \
+USERS=$(curl -s \
+-H "Authorization: Bearer $TOKEN" \
 "$PANEL/api/users" | jq -r '.[].username')
 
 for u in $USERS
@@ -228,7 +242,7 @@ curl -s -X PUT "$PANEL/api/user/$u" \
 -H "Authorization: Bearer $TOKEN" \
 -H "Content-Type: application/json" \
 -d "{
-\"nodes\": [\"$NODE_NAME\"]
+\"nodes\": [\"$NODE_ID\"]
 }" > /dev/null
 
 done
