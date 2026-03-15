@@ -8,6 +8,7 @@ echo "================================"
 echo "        By Aexpot"
 echo "  https://github.com/Aexpot"
 echo "================================"
+
 echo ""
 echo "1) Установить панель Marzban"
 echo "2) Удалить панель Marzban"
@@ -15,10 +16,9 @@ echo "3) Обновить Xray core на ноде"
 echo "4) Установить Marzban Node"
 echo "5) Удалить Marzban Node"
 echo "0) Выход"
-echo "================================"
+echo ""
 
 read -p "Выберите действие: " option
-
 
 if command -v docker-compose &> /dev/null
 then
@@ -80,7 +80,8 @@ systemctl restart nginx
 certbot --nginx -d $DOMAIN --non-interactive --agree-tos -m $EMAIL --redirect
 
 echo ""
-echo "Панель: https://$DOMAIN/dashboard"
+echo "Панель доступна:"
+echo "https://$DOMAIN/dashboard"
 
 }
 
@@ -90,7 +91,9 @@ remove_panel(){
 
 echo "Удаление панели..."
 
-$DC -f /opt/Marzban/docker-compose.yml down
+cd /opt/Marzban 2>/dev/null
+
+$DC down
 
 rm -rf /opt/Marzban
 
@@ -144,7 +147,7 @@ curl -fsSL https://get.docker.com | sh
 fi
 
 read -p "URL панели: " PANEL
-PANEL=$(echo $PANEL | xargs)
+PANEL=$(echo "$PANEL" | xargs)
 PANEL=${PANEL%/}
 
 read -p "Логин администратора: " USER
@@ -157,28 +160,26 @@ TOKEN=$(curl -s -X POST "$PANEL/api/admin/token" \
 -H "Content-Type: application/x-www-form-urlencoded" \
 -d "username=$USER&password=$PASS" | jq -r '.access_token')
 
-if [[ "$TOKEN" == "null" || -z "$TOKEN" ]]; then
+if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]
+then
 echo "Ошибка получения токена"
 exit 1
 fi
 
 echo "Токен получен"
 
+
 read -p "Имя ноды: " NODE_NAME
 read -p "IP ноды: " NODE_IP
 
+echo "Создание ноды..."
 
-echo "Создание ноды в панели..."
-
-NODE=$(curl -s -X POST "$PANEL/api/node" \
+NODE_DATA=$(curl -s -X POST "$PANEL/api/node" \
 -H "Authorization: Bearer $TOKEN" \
 -H "Content-Type: application/json" \
--d "{
-\"name\":\"$NODE_NAME\",
-\"address\":\"$NODE_IP\"
-}")
+-d "{\"name\":\"$NODE_NAME\",\"address\":\"$NODE_IP\"}")
 
-CERT=$(echo $NODE | jq -r '.certificate')
+CERT=$(echo "$NODE_DATA" | jq -r '.certificate')
 
 mkdir -p /var/lib/marzban-node
 
@@ -189,20 +190,19 @@ git clone https://github.com/Gozargah/Marzban-node ~/Marzban-node 2>/dev/null
 
 cd ~/Marzban-node
 
-
 cat > docker-compose.yml <<EOF
 services:
- marzban-node:
-  image: gozargah/marzban-node:latest
-  restart: always
-  network_mode: host
+  marzban-node:
+    image: gozargah/marzban-node:latest
+    restart: always
+    network_mode: host
 
-  volumes:
-   - /var/lib/marzban-node:/var/lib/marzban-node
+    volumes:
+      - /var/lib/marzban-node:/var/lib/marzban-node
 
-  environment:
-   SSL_CLIENT_CERT_FILE: "/var/lib/marzban-node/ssl_client_cert.pem"
-   SERVICE_PROTOCOL: rest
+    environment:
+      SSL_CLIENT_CERT_FILE: "/var/lib/marzban-node/ssl_client_cert.pem"
+      SERVICE_PROTOCOL: rest
 EOF
 
 
