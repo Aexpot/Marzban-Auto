@@ -139,7 +139,7 @@ install_node(){
 echo "=== Установка ноды ==="
 
 apt update -y
-apt install -y curl jq git socat
+apt install -y curl jq
 
 read -p "URL панели: " PANEL
 PANEL=${PANEL%/}
@@ -163,7 +163,6 @@ echo "Токен получен"
 
 read -p "Имя ноды: " NODE_NAME
 read -p "IP ноды: " NODE_IP
-read -p "Добавить всем пользователям? (yes/no): " ADD_ALL
 
 echo "Создание ноды..."
 
@@ -185,72 +184,31 @@ echo "Ошибка создания ноды"
 exit 1
 fi
 
-echo "ID ноды: $NODE_ID"
+echo ""
+echo "Нода создана!"
+echo ""
+echo "Теперь выполните эту команду на сервере ноды:"
+echo ""
 
-echo "Скачивание сертификата..."
-
-mkdir -p /var/lib/marzban-node
-
-curl -s \
--H "Authorization: Bearer $TOKEN" \
-"$PANEL/api/node/$NODE_ID/certificate" \
--o /var/lib/marzban-node/client.pem
-
-if [ ! -s /var/lib/marzban-node/client.pem ]; then
-echo "Ошибка скачивания сертификата"
-exit 1
-fi
-
-echo "Сертификат получен"
-
-git clone https://github.com/Gozargah/Marzban-node ~/Marzban-node 2>/dev/null
-
-cd ~/Marzban-node
-
-cat > docker-compose.yml <<EOF
-services:
-  marzban-node:
-    image: gozargah/marzban-node:latest
-    container_name: marzban-node
-    restart: always
-    network_mode: host
-    volumes:
-      - /var/lib/marzban-node:/var/lib/marzban-node
-    environment:
-      SSL_CLIENT_CERT_FILE: "/var/lib/marzban-node/client.pem"
-      SERVICE_PROTOCOL: rest
-EOF
-
-$DC up -d
+echo "mkdir -p /var/lib/marzban-node"
+echo ""
+echo "docker run -d \\"
+echo "--name marzban-node \\"
+echo "--restart always \\"
+echo "--network host \\"
+echo "-v /var/lib/marzban-node:/var/lib/marzban-node \\"
+echo "-e SERVICE_PROTOCOL=rest \\"
+echo "-e SSL_CLIENT_CERT_FILE=/var/lib/marzban-node/client.pem \\"
+echo "gozargah/marzban-node:latest"
 
 echo ""
-echo "Нода установлена"
-echo "Имя: $NODE_NAME"
-echo "IP: $NODE_IP"
-
-if [ "$ADD_ALL" = "yes" ]; then
-
-echo "Добавление ноды всем пользователям..."
-
-USERS=$(curl -s \
--H "Authorization: Bearer $TOKEN" \
-"$PANEL/api/users" | jq -r '.[].username')
-
-for u in $USERS
-do
-
-curl -s -X PUT "$PANEL/api/user/$u" \
--H "Authorization: Bearer $TOKEN" \
--H "Content-Type: application/json" \
--d "{
-\"nodes\": [$NODE_ID]
-}" > /dev/null
-
-done
-
-echo "Нода добавлена всем пользователям"
-
-fi
+echo "После этого скачайте certificate в панели:"
+echo ""
+echo "Nodes → Download certificate"
+echo ""
+echo "И сохраните его в:"
+echo ""
+echo "/var/lib/marzban-node/client.pem"
 
 }
 
