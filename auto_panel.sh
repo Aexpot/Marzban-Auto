@@ -6,7 +6,7 @@ echo "================================"
 echo "        MARZBAN MANAGER"
 echo "================================"
 echo "        By Aexpot"
-echo "  https://github.com/Aexpot"
+echo " https://github.com/Aexpot"
 echo "================================"
 echo ""
 echo "1) Установить панель Marzban"
@@ -20,7 +20,8 @@ echo "================================"
 read -p "Выберите действие: " option
 
 
-if command -v docker-compose &> /dev/null; then
+if command -v docker-compose &> /dev/null
+then
 DC="docker-compose"
 else
 DC="docker compose"
@@ -38,7 +39,7 @@ read -s -p "Пароль администратора: " ADMIN_PASS
 echo ""
 
 apt update -y
-apt install -y curl git docker.io docker-compose nginx certbot python3-certbot-nginx
+apt install -y curl git docker.io nginx certbot python3-certbot-nginx
 
 systemctl enable docker
 systemctl start docker
@@ -65,16 +66,21 @@ EOF
 
 cat > /etc/nginx/sites-available/marzban <<EOL
 server {
+
 server_name $DOMAIN;
 
 location / {
+
 proxy_pass http://127.0.0.1:8000;
+
 proxy_http_version 1.1;
 
 proxy_set_header Upgrade \$http_upgrade;
 proxy_set_header Connection "upgrade";
 proxy_set_header Host \$host;
+
 }
+
 }
 EOL
 
@@ -144,32 +150,31 @@ echo "=== Установка ноды ==="
 apt update -y
 apt install -y curl jq socat git
 
-if ! command -v docker &> /dev/null; then
+if ! command -v docker &> /dev/null
+then
 curl -fsSL https://get.docker.com | sh
 fi
 
-read -p "URL панели: " PANEL_URL
+read -p "URL панели (пример https://panel.com): " PANEL_URL
 PANEL_URL=${PANEL_URL%/}
 
 read -p "Логин администратора: " USERNAME
 read -s -p "Пароль: " PASSWORD
 echo ""
 
-read -p "Имя ноды: " NODE_NAME
-read -p "IP ноды: " NODE_IP
-read -p "Добавить всем пользователям? (yes/no): " ADD_USERS
-
+echo "Получение токена..."
 
 TOKEN=$(curl -s -X POST "$PANEL_URL/api/admin/token" \
 -H "Content-Type: application/x-www-form-urlencoded" \
 -d "username=$USERNAME&password=$PASSWORD" | jq -r '.access_token')
 
-
-if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]
+then
 echo "Ошибка получения токена"
 exit 1
 fi
 
+echo "Получение сертификата ноды..."
 
 mkdir -p /var/lib/marzban-node
 
@@ -185,54 +190,28 @@ cd ~/Marzban-node
 
 cat > docker-compose.yml <<EOF
 services:
-  marzban-node:
-    image: gozargah/marzban-node:latest
-    restart: always
-    network_mode: host
 
-    volumes:
-      - /var/lib/marzban-node:/var/lib/marzban-node
+ marzban-node:
 
-    environment:
-      SSL_CLIENT_CERT_FILE: "/var/lib/marzban-node/ssl_client_cert.pem"
-      SERVICE_PROTOCOL: rest
+  image: gozargah/marzban-node:latest
+  restart: always
+  network_mode: host
+
+  volumes:
+   - /var/lib/marzban-node:/var/lib/marzban-node
+
+  environment:
+   SSL_CLIENT_CERT_FILE: "/var/lib/marzban-node/ssl_client_cert.pem"
+   SERVICE_PROTOCOL: rest
 EOF
 
 
 $DC up -d
 
-
-curl -X POST "$PANEL_URL/api/node/settings" \
--H "Authorization: Bearer $TOKEN" \
--H "Content-Type: application/json" \
--d "{
-\"name\":\"$NODE_NAME\",
-\"address\":\"$NODE_IP\"
-}"
-
-
-if [ "$ADD_USERS" = "yes" ]; then
-
-USERS=$(curl -s "$PANEL_URL/api/users" \
--H "Authorization: Bearer $TOKEN" | jq -r '.[].username')
-
-for u in $USERS
-do
-
-curl -s -X PUT "$PANEL_URL/api/user/$u/node" \
--H "Authorization: Bearer $TOKEN" \
--H "Content-Type: application/json" \
--d "{\"node\":\"$NODE_NAME\"}"
-
-done
-
-fi
-
-
 echo ""
-echo "Нода установлена"
-echo "Имя: $NODE_NAME"
-echo "IP: $NODE_IP"
+echo "Нода успешно установлена"
+echo "Проверь в панели:"
+echo "$PANEL_URL/dashboard"
 
 }
 
@@ -242,7 +221,7 @@ remove_node(){
 
 echo "Удаление ноды..."
 
-cd ~/Marzban-node
+cd ~/Marzban-node 2>/dev/null
 
 $DC down
 
