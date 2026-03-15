@@ -180,7 +180,7 @@ NODE=$(curl -s -X POST "$PANEL/api/node" \
 
 NODE_ID=$(echo "$NODE" | jq -r '.id')
 
-if [ -z "$NODE_ID" ] || [ "$NODE_ID" = "null" ]; then
+if [ "$NODE_ID" = "null" ]; then
 echo "Ошибка создания ноды"
 echo "$NODE"
 exit 1
@@ -188,20 +188,21 @@ fi
 
 echo "ID ноды: $NODE_ID"
 
-echo "Получение сертификата..."
-
-CERT=$(curl -s \
--H "Authorization: Bearer $TOKEN" \
-"$PANEL/api/node/$NODE_ID/certificate" | jq -r '.certificate')
-
-if [ -z "$CERT" ] || [ "$CERT" = "null" ]; then
-echo "Ошибка получения сертификата"
-exit 1
-fi
+echo "Скачивание сертификата..."
 
 mkdir -p /var/lib/marzban-node
 
-echo "$CERT" > /var/lib/marzban-node/client.pem
+curl -s \
+-H "Authorization: Bearer $TOKEN" \
+"$PANEL/api/node/$NODE_ID/certificate" \
+-o /var/lib/marzban-node/client.pem
+
+if [ ! -s /var/lib/marzban-node/client.pem ]; then
+echo "Ошибка скачивания сертификата"
+exit 1
+fi
+
+echo "Сертификат сохранен"
 
 git clone https://github.com/Gozargah/Marzban-node ~/Marzban-node 2>/dev/null
 
@@ -211,6 +212,7 @@ cat > docker-compose.yml <<EOF
 services:
   marzban-node:
     image: gozargah/marzban-node:latest
+    container_name: marzban-node
     restart: always
     network_mode: host
     volumes:
@@ -242,7 +244,7 @@ curl -s -X PUT "$PANEL/api/user/$u" \
 -H "Authorization: Bearer $TOKEN" \
 -H "Content-Type: application/json" \
 -d "{
-\"nodes\": [\"$NODE_ID\"]
+\"nodes\": [$NODE_ID]
 }" > /dev/null
 
 done
