@@ -2,14 +2,21 @@
 
 clear
 
+GREEN="\e[32m"
+RED="\e[31m"
+YELLOW="\e[33m"
+CYAN="\e[36m"
+RESET="\e[0m"
+
+echo -e "${CYAN}"
 echo "================================"
 echo "        MARZBAN MANAGER"
 echo "================================"
 echo "        By Aexpot"
 echo "  https://github.com/Aexpot"
 echo "================================"
+echo -e "${RESET}"
 
-echo ""
 echo "1) Установить панель Marzban"
 echo "2) Удалить панель Marzban"
 echo "3) Обновить Xray core на ноде"
@@ -27,10 +34,9 @@ else
 DC="docker compose"
 fi
 
-
 install_panel(){
 
-echo "=== Установка панели ==="
+echo -e "${YELLOW}Установка панели...${RESET}"
 
 read -p "Домен панели: " DOMAIN
 read -p "Email SSL: " EMAIL
@@ -42,8 +48,7 @@ systemctl enable docker
 systemctl start docker
 
 cd /opt
-
-git clone https://github.com/Gozargah/Marzban 2>/dev/null
+git clone https://github.com/Gozargah/Marzban
 
 cd Marzban
 
@@ -79,17 +84,14 @@ systemctl restart nginx
 
 certbot --nginx -d $DOMAIN --non-interactive --agree-tos -m $EMAIL --redirect
 
-echo ""
-echo "Панель доступна:"
+echo -e "${GREEN}Панель установлена${RESET}"
 echo "https://$DOMAIN/dashboard"
 
 }
 
-
-
 remove_panel(){
 
-echo "Удаление панели..."
+echo -e "${RED}Удаление панели...${RESET}"
 
 cd /opt/Marzban 2>/dev/null
 
@@ -106,11 +108,9 @@ echo "Панель удалена"
 
 }
 
-
-
 update_xray(){
 
-echo "=== Обновление Xray ==="
+echo "Обновление Xray"
 
 read -p "Имя контейнера ноды: " CONTAINER
 
@@ -130,9 +130,9 @@ docker restart $CONTAINER
 
 docker exec $CONTAINER xray version
 
+echo "Xray обновлен"
+
 }
-
-
 
 install_node(){
 
@@ -182,7 +182,6 @@ NODE_ID=$(echo "$NODE" | jq -r '.id')
 
 if [ "$NODE_ID" = "null" ]; then
 echo "Ошибка создания ноды"
-echo "$NODE"
 exit 1
 fi
 
@@ -202,7 +201,7 @@ echo "Ошибка скачивания сертификата"
 exit 1
 fi
 
-echo "Сертификат сохранен"
+echo "Сертификат получен"
 
 git clone https://github.com/Gozargah/Marzban-node ~/Marzban-node 2>/dev/null
 
@@ -222,7 +221,7 @@ services:
       SERVICE_PROTOCOL: rest
 EOF
 
-docker compose up -d
+$DC up -d
 
 echo ""
 echo "Нода установлена"
@@ -255,7 +254,6 @@ fi
 
 }
 
-
 remove_node(){
 
 echo "Удаление ноды..."
@@ -271,36 +269,15 @@ echo "Нода удалена"
 
 }
 
-
-
 case $option in
 
-1)
-install_panel
-;;
+1) install_panel ;;
+2) remove_panel ;;
+3) update_xray ;;
+4) install_node ;;
+5) remove_node ;;
+0) exit ;;
 
-2)
-remove_panel
-;;
-
-3)
-update_xray
-;;
-
-4)
-install_node
-;;
-
-5)
-remove_node
-;;
-
-0)
-exit
-;;
-
-*)
-echo "Неверный выбор"
-;;
+*) echo "Неверный выбор" ;;
 
 esac
