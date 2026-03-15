@@ -5,62 +5,57 @@ clear
 echo "================================"
 echo "        MARZBAN MANAGER"
 echo "================================"
+echo "        By Aexpot"
+echo "  https://github.com/Aexpot"
+echo "================================"
+echo ""
 echo "1) Установить панель Marzban"
 echo "2) Удалить панель Marzban"
 echo "3) Обновить Xray core на ноде"
 echo "4) Установить Marzban Node"
 echo "5) Удалить Marzban Node"
-echo "6) Удалить панель + ноду"
 echo "0) Выход"
 echo "================================"
 
 read -p "Выберите действие: " option
 
 
-install_marzban() {
+if command -v docker-compose &> /dev/null; then
+DC="docker-compose"
+else
+DC="docker compose"
+fi
 
-echo "=== Установка Marzban ==="
 
-read -p "Введите домен панели: " DOMAIN
-read -p "Введите email для SSL: " EMAIL
-read -p "Введите логин администратора: " ADMIN_USER
-read -s -p "Введите пароль администратора: " ADMIN_PASS
+install_marzban(){
+
+echo "=== Установка панели ==="
+
+read -p "Домен панели: " DOMAIN
+read -p "Email SSL: " EMAIL
+read -p "Логин администратора: " ADMIN_USER
+read -s -p "Пароль администратора: " ADMIN_PASS
 echo ""
 
 apt update -y
-apt upgrade -y
-
-apt install -y curl git docker.io docker-compose nginx certbot python3-certbot-nginx jq socat
+apt install -y curl git docker.io docker-compose nginx certbot python3-certbot-nginx
 
 systemctl enable docker
 systemctl start docker
 
 cd /opt
 
-if [ ! -d "Marzban" ]; then
-git clone https://github.com/Gozargah/Marzban.git
-fi
+git clone https://github.com/Gozargah/Marzban 2>/dev/null
 
 cd Marzban
 
 cp .env.example .env
 
-echo "🚀 Запуск контейнера..."
-
-docker-compose up -d
+$DC up -d
 
 sleep 10
 
-CONTAINER=$(docker ps --filter "ancestor=gozargah/marzban" --format "{{.Names}}")
-
-if [ -z "$CONTAINER" ]; then
-echo "❌ Контейнер не найден"
-exit 1
-fi
-
-echo "Контейнер найден: $CONTAINER"
-
-echo "👤 Создание администратора..."
+CONTAINER=$(docker ps --filter ancestor=gozargah/marzban --format "{{.Names}}")
 
 docker exec -i $CONTAINER marzban-cli admin create <<EOF
 $ADMIN_USER
@@ -68,49 +63,39 @@ $ADMIN_PASS
 $ADMIN_PASS
 EOF
 
-echo "⚙ Настройка Nginx..."
-
 cat > /etc/nginx/sites-available/marzban <<EOL
 server {
-    server_name $DOMAIN;
+server_name $DOMAIN;
 
-    location / {
-        proxy_pass http://127.0.0.1:8000;
+location / {
+proxy_pass http://127.0.0.1:8000;
+proxy_http_version 1.1;
 
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-
-        proxy_set_header Host \$host;
-        proxy_cache_bypass \$http_upgrade;
-    }
+proxy_set_header Upgrade \$http_upgrade;
+proxy_set_header Connection "upgrade";
+proxy_set_header Host \$host;
+}
 }
 EOL
 
 ln -sf /etc/nginx/sites-available/marzban /etc/nginx/sites-enabled/
 
-nginx -t
 systemctl restart nginx
-
-echo "🔐 Получение SSL..."
 
 certbot --nginx -d $DOMAIN --non-interactive --agree-tos -m $EMAIL --redirect
 
 echo ""
-echo "================================"
-echo "✅ Установка завершена"
-echo "🌐 Панель: https://$DOMAIN/dashboard"
-echo "👤 Логин: $ADMIN_USER"
-echo "================================"
+echo "Панель: https://$DOMAIN/dashboard"
 
 }
 
 
-remove_marzban() {
 
-echo "🗑 Удаление панели..."
+remove_marzban(){
 
-docker-compose -f /opt/Marzban/docker-compose.yml down 2>/dev/null
+echo "Удаление панели..."
+
+$DC -f /opt/Marzban/docker-compose.yml down
 
 rm -rf /opt/Marzban
 
@@ -119,77 +104,84 @@ rm -f /etc/nginx/sites-available/marzban
 
 systemctl restart nginx
 
-echo "✅ Панель удалена"
+echo "Панель удалена"
 
 }
 
 
-update_xray() {
 
-echo "⬆ Обновление Xray Core"
+update_xray(){
 
-CONTAINER="marzban-node-marzban-node-1"
+echo "Обновление Xray..."
+
+read -p "Имя контейнера ноды: " NODE_CONTAINER
+
 VERSION="26.2.6"
 FILE="Xray-linux-64.zip"
 
-docker exec $CONTAINER bash -c "
+docker exec $NODE_CONTAINER bash -c "
 cd /tmp &&
-apt update -y >/dev/null 2>&1 &&
-apt install -y wget unzip >/dev/null 2>&1 &&
+apt update -y >/dev/null &&
+apt install -y wget unzip >/dev/null &&
 wget -q https://github.com/XTLS/Xray-core/releases/download/v$VERSION/$FILE &&
 unzip -o $FILE &&
 mv xray /usr/local/bin/xray &&
-chmod +x /usr/local/bin/xray &&
-rm -f $FILE
+chmod +x /usr/local/bin/xray
 "
 
-docker restart $CONTAINER
+docker restart $NODE_CONTAINER
 
-echo "Проверка версии:"
-docker exec $CONTAINER xray version
+docker exec $NODE_CONTAINER xray version
 
 }
 
 
-install_node() {
 
-echo "🚀 Установка Marzban Node"
+install_node(){
 
-apt-get update -y
-apt-get upgrade -y
+echo "=== Установка ноды ==="
 
-apt install -y curl socat git jq
+apt update -y
+apt install -y curl jq socat git
 
 if ! command -v docker &> /dev/null; then
-  echo "📦 Установка Docker..."
-  curl -fsSL https://get.docker.com | sh
+curl -fsSL https://get.docker.com | sh
 fi
 
-if [ ! -d "$HOME/Marzban-node" ]; then
-git clone https://github.com/Gozargah/Marzban-node $HOME/Marzban-node
+read -p "URL панели: " PANEL_URL
+PANEL_URL=${PANEL_URL%/}
+
+read -p "Логин администратора: " USERNAME
+read -s -p "Пароль: " PASSWORD
+echo ""
+
+read -p "Имя ноды: " NODE_NAME
+read -p "IP ноды: " NODE_IP
+read -p "Добавить всем пользователям? (yes/no): " ADD_USERS
+
+
+TOKEN=$(curl -s -X POST "$PANEL_URL/api/admin/token" \
+-H "Content-Type: application/x-www-form-urlencoded" \
+-d "username=$USERNAME&password=$PASSWORD" | jq -r '.access_token')
+
+
+if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+echo "Ошибка получения токена"
+exit 1
 fi
 
-cd $HOME/Marzban-node
 
 mkdir -p /var/lib/marzban-node
 
-read -rp "URL панели (пример https://panel.com): " PANEL_URL
-read -rp "Логин администратора: " USERNAME
-read -rsp "Пароль: " PASSWORD
-echo ""
-
-TOKEN=$(curl -s -X POST "$PANEL_URL/api/admin/token" \
-  -H "Content-Type: application/x-www-form-urlencoded" \
-  -d "username=$USERNAME&password=$PASSWORD" | jq -r '.access_token')
-
-if [ "$TOKEN" == "null" ] || [ -z "$TOKEN" ]; then
-  echo "❌ Ошибка получения токена"
-  exit 1
-fi
-
 curl -s -X POST "$PANEL_URL/api/node" \
-  -H "Authorization: Bearer $TOKEN" \
-  | tee /var/lib/marzban-node/ssl_client_cert.pem > /dev/null
+-H "Authorization: Bearer $TOKEN" \
+> /var/lib/marzban-node/ssl_client_cert.pem
+
+
+git clone https://github.com/Gozargah/Marzban-node ~/Marzban-node 2>/dev/null
+
+cd ~/Marzban-node
+
 
 cat > docker-compose.yml <<EOF
 services:
@@ -206,48 +198,61 @@ services:
       SERVICE_PROTOCOL: rest
 EOF
 
-docker-compose up -d
 
-echo "✅ Нода установлена"
+$DC up -d
+
+
+curl -X POST "$PANEL_URL/api/node/settings" \
+-H "Authorization: Bearer $TOKEN" \
+-H "Content-Type: application/json" \
+-d "{
+\"name\":\"$NODE_NAME\",
+\"address\":\"$NODE_IP\"
+}"
+
+
+if [ "$ADD_USERS" = "yes" ]; then
+
+USERS=$(curl -s "$PANEL_URL/api/users" \
+-H "Authorization: Bearer $TOKEN" | jq -r '.[].username')
+
+for u in $USERS
+do
+
+curl -s -X PUT "$PANEL_URL/api/user/$u/node" \
+-H "Authorization: Bearer $TOKEN" \
+-H "Content-Type: application/json" \
+-d "{\"node\":\"$NODE_NAME\"}"
+
+done
+
+fi
+
+
+echo ""
+echo "Нода установлена"
+echo "Имя: $NODE_NAME"
+echo "IP: $NODE_IP"
 
 }
 
 
-remove_node() {
 
-echo "🗑 Удаление ноды..."
+remove_node(){
 
-cd $HOME/Marzban-node 2>/dev/null
+echo "Удаление ноды..."
 
-docker-compose down 2>/dev/null
+cd ~/Marzban-node
 
-rm -rf $HOME/Marzban-node
+$DC down
+
+rm -rf ~/Marzban-node
 rm -rf /var/lib/marzban-node
 
-echo "✅ Нода удалена"
+echo "Нода удалена"
 
 }
 
-
-remove_all() {
-
-echo "⚠ Полное удаление панели и ноды"
-
-docker stop $(docker ps -aq) 2>/dev/null
-docker rm $(docker ps -aq) 2>/dev/null
-
-rm -rf /opt/Marzban
-rm -rf $HOME/Marzban-node
-rm -rf /var/lib/marzban-node
-
-rm -f /etc/nginx/sites-enabled/marzban
-rm -f /etc/nginx/sites-available/marzban
-
-systemctl restart nginx
-
-echo "✅ Всё удалено"
-
-}
 
 
 case $option in
@@ -270,10 +275,6 @@ install_node
 
 5)
 remove_node
-;;
-
-6)
-remove_all
 ;;
 
 0)
