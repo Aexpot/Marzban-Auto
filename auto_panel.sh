@@ -9,6 +9,8 @@ echo "1) Установить панель Marzban"
 echo "2) Удалить панель Marzban"
 echo "3) Обновить Xray core на ноде"
 echo "4) Установить Marzban Node"
+echo "5) Удалить Marzban Node"
+echo "6) Удалить панель + ноду"
 echo "0) Выход"
 echo "================================"
 
@@ -106,7 +108,7 @@ echo "================================"
 
 remove_marzban() {
 
-echo "🗑 Удаление Marzban..."
+echo "🗑 Удаление панели..."
 
 docker-compose -f /opt/Marzban/docker-compose.yml down 2>/dev/null
 
@@ -117,7 +119,7 @@ rm -f /etc/nginx/sites-available/marzban
 
 systemctl restart nginx
 
-echo "✅ Marzban удален"
+echo "✅ Панель удалена"
 
 }
 
@@ -211,6 +213,43 @@ echo "✅ Нода установлена"
 }
 
 
+remove_node() {
+
+echo "🗑 Удаление ноды..."
+
+cd $HOME/Marzban-node 2>/dev/null
+
+docker-compose down 2>/dev/null
+
+rm -rf $HOME/Marzban-node
+rm -rf /var/lib/marzban-node
+
+echo "✅ Нода удалена"
+
+}
+
+
+remove_all() {
+
+echo "⚠ Полное удаление панели и ноды"
+
+docker stop $(docker ps -aq) 2>/dev/null
+docker rm $(docker ps -aq) 2>/dev/null
+
+rm -rf /opt/Marzban
+rm -rf $HOME/Marzban-node
+rm -rf /var/lib/marzban-node
+
+rm -f /etc/nginx/sites-enabled/marzban
+rm -f /etc/nginx/sites-available/marzban
+
+systemctl restart nginx
+
+echo "✅ Всё удалено"
+
+}
+
+
 case $option in
 
 1)
@@ -227,6 +266,14 @@ update_xray
 
 4)
 install_node
+;;
+
+5)
+remove_node
+;;
+
+6)
+remove_all
 ;;
 
 0)
