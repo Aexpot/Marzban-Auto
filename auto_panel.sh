@@ -6,7 +6,7 @@ echo "================================"
 echo "        MARZBAN MANAGER"
 echo "================================"
 echo "        By Aexpot"
-echo " https://github.com/Aexpot"
+echo "  https://github.com/Aexpot"
 echo "================================"
 echo ""
 echo "1) Установить панель Marzban"
@@ -28,15 +28,12 @@ DC="docker compose"
 fi
 
 
-install_marzban(){
+install_panel(){
 
 echo "=== Установка панели ==="
 
 read -p "Домен панели: " DOMAIN
 read -p "Email SSL: " EMAIL
-read -p "Логин администратора: " ADMIN_USER
-read -s -p "Пароль администратора: " ADMIN_PASS
-echo ""
 
 apt update -y
 apt install -y curl git docker.io nginx certbot python3-certbot-nginx
@@ -56,15 +53,7 @@ $DC up -d
 
 sleep 10
 
-CONTAINER=$(docker ps --filter ancestor=gozargah/marzban --format "{{.Names}}")
-
-docker exec -i $CONTAINER marzban-cli admin create <<EOF
-$ADMIN_USER
-$ADMIN_PASS
-$ADMIN_PASS
-EOF
-
-cat > /etc/nginx/sites-available/marzban <<EOL
+cat > /etc/nginx/sites-available/marzban <<EOF
 server {
 
 server_name $DOMAIN;
@@ -82,7 +71,7 @@ proxy_set_header Host \$host;
 }
 
 }
-EOL
+EOF
 
 ln -sf /etc/nginx/sites-available/marzban /etc/nginx/sites-enabled/
 
@@ -97,7 +86,7 @@ echo "Панель: https://$DOMAIN/dashboard"
 
 
 
-remove_marzban(){
+remove_panel(){
 
 echo "Удаление панели..."
 
@@ -118,26 +107,25 @@ echo "Панель удалена"
 
 update_xray(){
 
-echo "Обновление Xray..."
+echo "=== Обновление Xray ==="
 
-read -p "Имя контейнера ноды: " NODE_CONTAINER
+read -p "Имя контейнера ноды: " CONTAINER
 
 VERSION="26.2.6"
-FILE="Xray-linux-64.zip"
 
-docker exec $NODE_CONTAINER bash -c "
+docker exec $CONTAINER bash -c "
 cd /tmp &&
 apt update -y >/dev/null &&
 apt install -y wget unzip >/dev/null &&
-wget -q https://github.com/XTLS/Xray-core/releases/download/v$VERSION/$FILE &&
-unzip -o $FILE &&
+wget -q https://github.com/XTLS/Xray-core/releases/download/v$VERSION/Xray-linux-64.zip &&
+unzip -o Xray-linux-64.zip &&
 mv xray /usr/local/bin/xray &&
 chmod +x /usr/local/bin/xray
 "
 
-docker restart $NODE_CONTAINER
+docker restart $CONTAINER
 
-docker exec $NODE_CONTAINER xray version
+docker exec $CONTAINER xray version
 
 }
 
@@ -155,32 +143,46 @@ then
 curl -fsSL https://get.docker.com | sh
 fi
 
-read -p "URL панели (пример https://panel.com): " PANEL_URL
-PANEL_URL=${PANEL_URL%/}
+read -p "URL панели: " PANEL
+PANEL=$(echo $PANEL | xargs)
+PANEL=${PANEL%/}
 
-read -p "Логин администратора: " USERNAME
-read -s -p "Пароль: " PASSWORD
+read -p "Логин администратора: " USER
+read -s -p "Пароль: " PASS
 echo ""
 
-echo "Получение токена..."
+echo "Получение API токена..."
 
-TOKEN=$(curl -s -X POST "$PANEL_URL/api/admin/token" \
+TOKEN=$(curl -s -X POST "$PANEL/api/admin/token" \
 -H "Content-Type: application/x-www-form-urlencoded" \
--d "username=$USERNAME&password=$PASSWORD" | jq -r '.access_token')
+-d "username=$USER&password=$PASS" | jq -r '.access_token')
 
-if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]
-then
+if [[ "$TOKEN" == "null" || -z "$TOKEN" ]]; then
 echo "Ошибка получения токена"
 exit 1
 fi
 
-echo "Получение сертификата ноды..."
+echo "Токен получен"
+
+read -p "Имя ноды: " NODE_NAME
+read -p "IP ноды: " NODE_IP
+
+
+echo "Создание ноды в панели..."
+
+NODE=$(curl -s -X POST "$PANEL/api/node" \
+-H "Authorization: Bearer $TOKEN" \
+-H "Content-Type: application/json" \
+-d "{
+\"name\":\"$NODE_NAME\",
+\"address\":\"$NODE_IP\"
+}")
+
+CERT=$(echo $NODE | jq -r '.certificate')
 
 mkdir -p /var/lib/marzban-node
 
-curl -s -X POST "$PANEL_URL/api/node" \
--H "Authorization: Bearer $TOKEN" \
-> /var/lib/marzban-node/ssl_client_cert.pem
+echo "$CERT" > /var/lib/marzban-node/ssl_client_cert.pem
 
 
 git clone https://github.com/Gozargah/Marzban-node ~/Marzban-node 2>/dev/null
@@ -190,9 +192,7 @@ cd ~/Marzban-node
 
 cat > docker-compose.yml <<EOF
 services:
-
  marzban-node:
-
   image: gozargah/marzban-node:latest
   restart: always
   network_mode: host
@@ -209,9 +209,9 @@ EOF
 $DC up -d
 
 echo ""
-echo "Нода успешно установлена"
-echo "Проверь в панели:"
-echo "$PANEL_URL/dashboard"
+echo "Нода установлена"
+echo "Имя: $NODE_NAME"
+echo "IP: $NODE_IP"
 
 }
 
@@ -237,11 +237,11 @@ echo "Нода удалена"
 case $option in
 
 1)
-install_marzban
+install_panel
 ;;
 
 2)
-remove_marzban
+remove_panel
 ;;
 
 3)
