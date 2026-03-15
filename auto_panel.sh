@@ -141,13 +141,7 @@ echo "=== Установка ноды ==="
 apt update -y
 apt install -y curl jq socat git
 
-if ! command -v docker &> /dev/null
-then
-curl -fsSL https://get.docker.com | sh
-fi
-
 read -p "URL панели: " PANEL
-PANEL=$(echo "$PANEL" | xargs)
 PANEL=${PANEL%/}
 
 read -p "Логин администратора: " USER
@@ -160,31 +154,40 @@ TOKEN=$(curl -s -X POST "$PANEL/api/admin/token" \
 -H "Content-Type: application/x-www-form-urlencoded" \
 -d "username=$USER&password=$PASS" | jq -r '.access_token')
 
-if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]
-then
+if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
 echo "Ошибка получения токена"
 exit 1
 fi
 
 echo "Токен получен"
 
-
 read -p "Имя ноды: " NODE_NAME
 read -p "IP ноды: " NODE_IP
+read -p "Добавить всем пользователям? (yes/no): " ADD_ALL
 
-echo "Создание ноды..."
+echo "Создание ноды в панели..."
 
-NODE_DATA=$(curl -s -X POST "$PANEL/api/node" \
+NODE_RESPONSE=$(curl -s -X POST "$PANEL/api/node" \
 -H "Authorization: Bearer $TOKEN" \
 -H "Content-Type: application/json" \
--d "{\"name\":\"$NODE_NAME\",\"address\":\"$NODE_IP\"}")
+-d "{
+\"name\":\"$NODE_NAME\",
+\"address\":\"$NODE_IP\",
+\"port\":62050,
+\"api_port\":62051,
+\"usage_coefficient\":1
+}")
 
-CERT=$(echo "$NODE_DATA" | jq -r '.certificate')
+CERT=$(echo "$NODE_RESPONSE" | jq -r '.certificate')
+
+if [ -z "$CERT" ] || [ "$CERT" = "null" ]; then
+echo "Ошибка получения сертификата"
+exit 1
+fi
 
 mkdir -p /var/lib/marzban-node
 
-echo "$CERT" > /var/lib/marzban-node/ssl_client_cert.pem
-
+echo "$CERT" > /var/lib/marzban-node/client.pem
 
 git clone https://github.com/Gozargah/Marzban-node ~/Marzban-node 2>/dev/null
 
@@ -196,25 +199,45 @@ services:
     image: gozargah/marzban-node:latest
     restart: always
     network_mode: host
-
     volumes:
       - /var/lib/marzban-node:/var/lib/marzban-node
-
     environment:
-      SSL_CLIENT_CERT_FILE: "/var/lib/marzban-node/ssl_client_cert.pem"
+      SSL_CLIENT_CERT_FILE: "/var/lib/marzban-node/client.pem"
       SERVICE_PROTOCOL: rest
+      XRAY_JSON: "/var/lib/marzban-node/xray.json"
 EOF
 
-
-$DC up -d
+docker compose up -d
 
 echo ""
 echo "Нода установлена"
 echo "Имя: $NODE_NAME"
 echo "IP: $NODE_IP"
 
-}
+if [ "$ADD_ALL" = "yes" ]; then
 
+echo "Добавление ноды всем пользователям..."
+
+USERS=$(curl -s -H "Authorization: Bearer $TOKEN" \
+"$PANEL/api/users" | jq -r '.[].username')
+
+for u in $USERS
+do
+
+curl -s -X PUT "$PANEL/api/user/$u" \
+-H "Authorization: Bearer $TOKEN" \
+-H "Content-Type: application/json" \
+-d "{
+\"nodes\": [\"$NODE_NAME\"]
+}" > /dev/null
+
+done
+
+echo "Нода добавлена всем пользователям"
+
+fi
+
+}
 
 
 remove_node(){
