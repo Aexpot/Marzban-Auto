@@ -427,7 +427,11 @@ git pull --ff-only
 
 if command -v nginx >/dev/null 2>&1; then
 nginx -t
+if [[ -d /run/systemd/system ]]; then
 systemctl reload nginx
+else
+nginx -s reload
+fi
 fi
 
 echo -e "${GREEN}Панель обновлена${RESET}"
