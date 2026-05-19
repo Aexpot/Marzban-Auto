@@ -1,6 +1,10 @@
 #!/bin/bash
 
+set -Eeuo pipefail
+
+if [[ -t 1 ]] && [[ -n "${TERM:-}" ]]; then
 clear
+fi
 
 GREEN="\e[32m"
 RED="\e[31m"
@@ -25,21 +29,32 @@ echo "5) Удалить Marzban Node"
 echo "0) Выход"
 echo ""
 
-read -p "Выберите действие: " option
+read -r -p "Выберите действие: " option
 
 if command -v docker-compose &> /dev/null
 then
-DC="docker-compose"
+	DC=(docker-compose)
 else
-DC="docker compose"
+	DC=(docker compose)
 fi
+
+require_root(){
+
+if [[ $EUID -ne 0 ]]; then
+echo -e "${RED}Запустите скрипт от root или через sudo${RESET}"
+exit 1
+fi
+
+}
 
 install_panel(){
 
+require_root
+
 echo -e "${YELLOW}Установка панели...${RESET}"
 
-read -p "Домен панели: " DOMAIN
-read -p "Email SSL: " EMAIL
+read -r -p "Домен панели: " DOMAIN
+read -r -p "Email SSL: " EMAIL
 
 apt update -y
 apt install -y curl git docker.io nginx certbot python3-certbot-nginx
@@ -47,14 +62,20 @@ apt install -y curl git docker.io nginx certbot python3-certbot-nginx
 systemctl enable docker
 systemctl start docker
 
-cd /opt
+cd /opt || exit 1
+
+if [[ -d /opt/Marzban ]]; then
+echo -e "${RED}/opt/Marzban уже существует${RESET}"
+exit 1
+fi
+
 git clone https://github.com/Gozargah/Marzban
 
-cd Marzban
+cd Marzban || exit 1
 
 cp .env.example .env
 
-$DC up -d
+"${DC[@]}" up -d
 
 sleep 10
 
@@ -82,7 +103,7 @@ ln -sf /etc/nginx/sites-available/marzban /etc/nginx/sites-enabled/
 
 systemctl restart nginx
 
-certbot --nginx -d $DOMAIN --non-interactive --agree-tos -m $EMAIL --redirect
+certbot --nginx -d "$DOMAIN" --non-interactive --agree-tos -m "$EMAIL" --redirect
 
 echo -e "${GREEN}Панель установлена${RESET}"
 echo "https://$DOMAIN/dashboard"
@@ -91,11 +112,16 @@ echo "https://$DOMAIN/dashboard"
 
 remove_panel(){
 
+require_root
+
 echo -e "${RED}Удаление панели...${RESET}"
 
-cd /opt/Marzban 2>/dev/null
-
-$DC down
+if [[ -d /opt/Marzban ]]; then
+cd /opt/Marzban || exit 1
+"${DC[@]}" down
+else
+echo "Директория /opt/Marzban не найдена, пропускаю docker compose down"
+fi
 
 rm -rf /opt/Marzban
 
@@ -112,11 +138,11 @@ update_xray(){
 
 echo "Обновление Xray"
 
-read -p "Имя контейнера ноды: " CONTAINER
+read -r -p "Имя контейнера ноды: " CONTAINER
 
 VERSION="26.2.6"
 
-docker exec $CONTAINER bash -c "
+docker exec "$CONTAINER" bash -c "
 cd /tmp &&
 apt update -y >/dev/null &&
 apt install -y wget unzip >/dev/null &&
@@ -126,9 +152,9 @@ mv xray /usr/local/bin/xray &&
 chmod +x /usr/local/bin/xray
 "
 
-docker restart $CONTAINER
+docker restart "$CONTAINER"
 
-docker exec $CONTAINER xray version
+docker exec "$CONTAINER" xray version
 
 echo "Xray обновлен"
 
@@ -136,23 +162,28 @@ echo "Xray обновлен"
 
 install_node(){
 
+require_root
+
 echo "=== Установка ноды ==="
 
 apt update -y
 apt install -y curl jq
 
-read -p "URL панели: " PANEL
+read -r -p "URL панели: " PANEL
 PANEL=${PANEL%/}
 
-read -p "Логин администратора: " USER
-read -s -p "Пароль: " PASS
+read -r -p "Логин администратора: " USER
+read -r -s -p "Пароль: " PASS
 echo ""
 
 echo "Получение API токена..."
 
-TOKEN=$(curl -s -X POST "$PANEL/api/admin/token" \
--H "Content-Type: application/x-www-form-urlencoded" \
--d "username=$USER&password=$PASS" | jq -r '.access_token')
+TOKEN_RESPONSE=$(curl -sS -X POST "$PANEL/api/admin/token" \
+	-H "Content-Type: application/x-www-form-urlencoded" \
+	--data-urlencode "username=$USER" \
+	--data-urlencode "password=$PASS")
+
+TOKEN=$(echo "$TOKEN_RESPONSE" | jq -er '.access_token' 2>/dev/null || true)
 
 if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
 echo "Ошибка получения токена"
@@ -161,25 +192,24 @@ fi
 
 echo "Токен получен"
 
-read -p "Имя ноды: " NODE_NAME
-read -p "IP ноды: " NODE_IP
+read -r -p "Имя ноды: " NODE_NAME
+read -r -p "IP ноды: " NODE_IP
 
 echo "Создание ноды..."
 
-NODE=$(curl -s -X POST "$PANEL/api/node" \
--H "Authorization: Bearer $TOKEN" \
--H "Content-Type: application/json" \
--d "{
-\"name\":\"$NODE_NAME\",
-\"address\":\"$NODE_IP\",
-\"port\":62050,
-\"api_port\":62051,
-\"usage_coefficient\":1
-}")
+NODE_PAYLOAD=$(jq -n \
+	--arg name "$NODE_NAME" \
+	--arg address "$NODE_IP" \
+	'{name:$name,address:$address,port:62050,api_port:62051,usage_coefficient:1}')
 
-NODE_ID=$(echo "$NODE" | jq -r '.id')
+NODE=$(curl -sS -X POST "$PANEL/api/node" \
+	-H "Authorization: Bearer $TOKEN" \
+	-H "Content-Type: application/json" \
+	-d "$NODE_PAYLOAD")
 
-if [ "$NODE_ID" = "null" ]; then
+NODE_ID=$(echo "$NODE" | jq -er '.id' 2>/dev/null || true)
+
+if [ -z "$NODE_ID" ] || [ "$NODE_ID" = "null" ]; then
 echo "Ошибка создания ноды"
 exit 1
 fi
@@ -214,13 +244,16 @@ echo "/var/lib/marzban-node/client.pem"
 
 remove_node(){
 
+require_root
+
 echo "Удаление ноды..."
 
-cd ~/Marzban-node 2>/dev/null
+if docker ps -a --format '{{.Names}}' | grep -Fxq marzban-node; then
+docker rm -f marzban-node
+else
+echo "Контейнер marzban-node не найден"
+fi
 
-$DC down
-
-rm -rf ~/Marzban-node
 rm -rf /var/lib/marzban-node
 
 echo "Нода удалена"
