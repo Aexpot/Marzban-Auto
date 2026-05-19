@@ -397,7 +397,7 @@ echo ""
 echo "Xray:"
 local xray_container
 if docker info >/dev/null 2>&1; then
-xray_container=$(docker ps --format '{{.Names}}' | grep -E 'marzban-node|xray|marzban' | head -n1 || true)
+xray_container=$(docker ps --format '{{.Names}}' | grep -E 'marzban-node|xray' | head -n1 || true)
 else
 xray_container=""
 fi
