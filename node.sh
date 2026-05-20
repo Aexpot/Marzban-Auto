@@ -23,18 +23,26 @@ apt-get upgrade -y
 
 # Установка зависимостей
 echo "[2/8] Установка зависимостей..."
-apt-get install -y curl socat git docker-compose-plugin
+apt-get install -y curl socat git
 
 # Установка Docker
 echo "[3/8] Установка Docker..."
 curl -fsSL https://get.docker.com | sh
 
+# Проверка Docker Compose
+echo "[4/8] Проверка Docker Compose..."
+
+if ! docker compose version >/dev/null 2>&1; then
+    echo "Docker Compose не найден!"
+    exit 1
+fi
+
 # Создание папки
-echo "[4/8] Создание директорий..."
+echo "[5/8] Создание директорий..."
 mkdir -p /var/lib/marzban-node/
 
 # Ввод сертификата
-echo "[5/8] Вставь SSL сертификат панели."
+echo "[6/8] Вставь SSL сертификат панели."
 echo "После вставки нажми CTRL+D"
 echo ""
 
@@ -43,7 +51,7 @@ cat > /var/lib/marzban-node/ssl_client_cert.pem
 chmod 600 /var/lib/marzban-node/ssl_client_cert.pem
 
 # Клонирование
-echo "[6/8] Загрузка Marzban-node..."
+echo "[7/8] Загрузка Marzban-node..."
 
 cd /root
 
@@ -56,8 +64,6 @@ git clone https://github.com/Gozargah/Marzban-node
 cd Marzban-node
 
 # Создание docker-compose.yml
-echo "[7/8] Создание docker-compose.yml..."
-
 cat > docker-compose.yml <<EOF
 services:
   marzban-node:
@@ -77,6 +83,7 @@ EOF
 echo "[8/8] Запуск Marzban-node..."
 
 docker compose down --remove-orphans || true
+docker compose pull
 docker compose up -d
 
 echo ""
@@ -84,15 +91,14 @@ echo "========================================="
 echo "      Установка завершена!"
 echo "========================================="
 echo ""
-echo "Проверка контейнеров:"
+
 docker ps
 
 echo ""
 echo "Логи:"
 echo "cd /root/Marzban-node && docker compose logs -f"
 echo ""
-echo "Теперь добавь IP сервера в панели Marzban."
-echo ""
-echo "Порт узла: 62050"
-echo "Протокол: REST"
+echo "Добавь узел в панели Marzban:"
+echo "Port: 62050"
+echo "Protocol: REST"
 echo ""
